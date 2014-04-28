@@ -1,0 +1,629 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+"http://www.w3.org/TR/html4/loose.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+        <title>Flappy bird!</title>
+        <script type ="text/javascript">
+            //Context of the device.
+            var canvas;
+            var context;
+
+            //-------------------------------------------------------------
+            //Bird
+            //-------------------------------------------------------------
+
+            //Bird wing state enum
+            var BirdWingState = {
+                NORMAL : 0,
+                UP : 1,
+                DOWN : 2
+            }
+            //Max bird strength
+            //BirdStrength is used to determine flying angle
+            //and control image's slope anglemn
+            // 3->up 45
+            // 2->horizontal 0
+            // 1->down -45
+            // 0->vertical 90
+            var MaxBirdStrength = 30;
+
+            //Class bird
+            var CBird = {
+                createNew : function() {
+                    var CBirdObject = {};
+                    CBirdObject.height = 200;
+                    CBirdObject.position = 100;
+                    CBirdObject.image = new Image();
+                    CBirdObject.strength = 2;
+                    //
+                    CBirdObject.wingState = BirdWingState.NORMAL;
+                    CBirdObject.flyAngle = Math.PI * 0;
+
+                    //Methods
+                    CBirdObject.flyUp = function() {
+                        CBirdObject.height = CBirdObject.height + 1.5 * CBirdObject.strength;
+                    };
+
+                    CBirdObject.fall = function() {
+                        CBirdObject.height = CBirdObject.height - Math.round(0.2 * (30 - CBirdObject.strength));
+
+                        //console.log('%d %d',CBirdObject.strength, CBirdObject.height);
+                    };
+
+                    //Use to draw bird according to bird states.
+                    CBirdObject.drawBird = function() {
+                        if (CBirdObject.wingState == BirdWingState.DOWN) {
+                            CBirdObject.image.src = './assets/images/bird/down.png';
+                        } else if (CBirdObject.wingState == BirdWingState.NORMAL) {
+                            CBirdObject.image.src = './assets/images/bird/normal.png';
+
+                        } else if (CBirdObject.wingState == BirdWingState.UP) {
+                            CBirdObject.image.src = './assets/images/bird/up.png';
+                        } else {
+                            console.log('Wrong bird wing state!');
+                        }
+                        
+                        if(gameState == GameState.NOT_STARTED){
+                            context.drawImage(CBirdObject.image, CBirdObject.position - 23, CBirdObject.height - 23);
+                        }
+                        else{
+                            
+                            context.save();
+                            context.translate(CBirdObject.position, (448 - CBirdObject.height));
+                            context.rotate(CBirdObject.flyAngle);
+
+                            context.drawImage(CBirdObject.image, -23, -23);
+                            context.translate(-CBirdObject.position, (-448 + CBirdObject.height));
+                            context.restore()
+                        }
+                    };
+
+                    return CBirdObject;
+                }
+            };
+
+            //-----------------------------------------------------------
+            //Pipe
+            //-----------------------------------------------------------
+
+            //Base class of pipe
+            var CPipe = {
+                createNew : function() {
+                    var CPipeObject = {};
+                    CPipeObject.length = 0;
+                    CPipeObject.width = 70;
+                    CPipeObject.position = 0;
+                    CPipeObject.image = new Image();
+                    CPipeObject.boundingRect = {};
+                    CPipeObject.boundingRect.left = 0;
+                    CPipeObject.boundingRect.top = 0;
+                    CPipeObject.boundingRect.right = 0;
+                    CPipeObject.boundingRect.bottom = 0;
+
+                    return CPipeObject;
+                }
+            }
+
+            var CTopPipe = {
+                createNew : function() {
+                    var CTopPipeObject = CPipe.createNew();
+
+                    CTopPipeObject.drawPipe = function() {
+                        context.drawImage(CTopPipeObject.image, //src file
+                        0, 250 - CTopPipeObject.length, //src x, src y
+                        70, CTopPipeObject.length, //
+                        CTopPipeObject.position, 0, 70, CTopPipeObject.length);
+                    };
+
+                    //getBoundingRect
+                    CTopPipeObject.computeBoundingRect = function() {
+                        CTopPipeObject.boundingRect.left = CTopPipeObject.position - 23;
+
+                        CTopPipeObject.boundingRect.top = 0;
+
+                        CTopPipeObject.boundingRect.right = CTopPipeObject.position + CTopPipeObject.width + 23;
+
+                        CTopPipeObject.boundingRect.bottom = CTopPipeObject.length + 23;
+
+                    };
+
+                    return CTopPipeObject;
+                }
+            }
+
+            var CBottomPipe = {
+                createNew : function() {
+                    var CBottomPipeObject = CPipe.createNew();
+
+                    CBottomPipeObject.drawPipe = function() {
+
+                        context.drawImage(CBottomPipeObject.image, //src file
+                        0, 0, //src x, src y
+                        70, CBottomPipeObject.length, //
+                        CBottomPipeObject.position, gameAreaHeight - 64 - CBottomPipeObject.length, 70, CBottomPipeObject.length);
+                    };
+
+                    //getBoundingRect
+                    CBottomPipeObject.computeBoundingRect = function() {
+
+                        CBottomPipeObject.boundingRect.left = CBottomPipeObject.position - 23;
+
+                        CBottomPipeObject.boundingRect.top = gameAreaHeight - 64 - CBottomPipeObject.length - 23;
+
+                        CBottomPipeObject.boundingRect.right = CBottomPipeObject.position + CBottomPipeObject.width + 23;
+
+                        CBottomPipeObject.boundingRect.bottom = gameAreaHeight - 64 - CBottomPipeObject.length;
+
+                    };
+
+                    return CBottomPipeObject;
+                }
+            }
+
+            //--------------------------------------------------------------
+            //game logic
+            //---------------------------------------------------------------
+
+            var GameState = {
+                OVER : 0,
+                NOT_STARED : 1,
+                BEING_PLAYED : 2
+            };
+
+            //-------------------------------------------------------------------
+            //Global variables
+            //---------------------------------------------------------------
+
+            //Environment state enum
+            var EnvironmentState = {
+                DAYTIME : 0,
+                NIGHT : 1
+            };
+
+            //Scene
+            var startTitleImg = new Image();
+            var bkgImg = new Image();
+            var groundImg = new Image();
+            var environmentState;
+
+            var frameFlag = 0;
+            //Use for control ground image display modes.
+            //var offsetToCenterArea; //Use for adjust game view area to screen center.
+            var frameCounter = 0;
+
+            var tempHeightVar = 0;
+            var gravity = 0.1;
+            var flyHeightUnit = 25;
+            var originHeight = 220;
+
+            var bird;
+
+            //pipes
+            var defaultPipeInterval = (384 - 2 * 70) / 2;
+            var topPipeSet = [];
+            var bottomPipeSet = [];
+            var pipeStartPos = 0;
+            var aisleHeight = 120;
+
+            //Game
+            var gameState;
+
+            var lastFrameDate;
+            var timeElapsed = 0;
+            var playingTime = 0;
+            var currGameScore = 0;
+            var bestGameScore = 0;
+
+            var gameAreaWidth = 384;
+            var gameAreaHeight = 512;
+
+            //Generate a random integer number by Min and Max (Min <= x <= Max).
+            function GetRandomNum(Min, Max) {
+                var Range = Max - Min;
+                var Rand = Math.random();
+                return (Min + Math.round(Rand * Range));
+            }
+
+            //Key event handler.
+
+            function onKeyDown(event) {
+                //Key code of spacekey.
+                var spacekeyCode = 32;
+
+                if (event.keyCode == spacekeyCode) {
+
+                    if (gameState == GameState.NOT_STARTED) {
+                        startGame();
+                        gameState = GameState.BEING_PLAYED;
+                    } else if (gameState == GameState.BEING_PLAYED) {
+
+                        //gameState = GameState.OVER;
+
+                        bird.strength = MaxBirdStrength;
+
+                        bird.flyUp();
+                        playSound('./assets/sounds/swooshing.wav');
+                        playSound('./assets/sounds/wing.wav');
+
+                        //frameFlag = 0;
+                    }
+                }
+
+                if (event.keyCode == 82 && gameState == GameState.OVER) {
+
+                    startGame();
+                    gameState = GameState.BEING_PLAYED;
+                }
+
+            }
+
+            function init() {
+                //Get canvas and context.
+                canvas = document.getElementById('canvas');
+                context = canvas.getContext('2d');
+
+                //Game init.
+                gameState = GameState.NOT_STARTED;
+                bestGameScore = 0;
+                currGameScore = 0;
+
+                //For scene init.
+                var tempFlag;
+                tempFlag = GetRandomNum(0, 1);
+                if (tempFlag == 0) {
+                    environmentState = EnvironmentState.DAYTIME;
+                } else {
+                    environmentState = EnvironmentState.NIGHT;
+                }
+
+                groundImg.src = './assets/images/bkgImg/ground.png';
+
+                //For bird init.
+                bird = CBird.createNew()
+
+                var i;
+                var tempTopPipe;
+                var tempBottomPipe
+                for ( i = 0; i <= 2; i++) {
+                    var newAisleTopPos = generateAisleTopPos();
+
+                    tempTopPipe = CTopPipe.createNew();
+                    tempTopPipe.image.src = './assets/images/pipe/top.png';
+                    topPipeSet.push(tempTopPipe);
+
+                    tempBottomPipe = CBottomPipe.createNew();
+                    tempBottomPipe.image.src = './assets/images/pipe/bottom.png';
+                    bottomPipeSet.push(tempBottomPipe);
+                }
+
+                //record date limits to first frame.
+                /*lastFrameDate = new Date;
+                playingTime = 0;
+                timeEclipse = 0;*/
+
+                //Register key envent function.
+                document.onkeydown = onKeyDown;
+
+                setInterval(render, 23);
+            }
+
+            function startGame() {
+                //Game init.
+                currGameScore = 0;
+
+                bird.strength = 20;
+                bird.height = originHeight;
+                bird.position = 100;
+
+                var i;
+                var tempPipePos = pipeStartPos;
+                for ( i = 0; i <= 2; i++) {
+                    var newAisleTopPos = generateAisleTopPos();
+
+                    tempPipePos += defaultPipeInterval + topPipeSet[i].width - 2;
+                    topPipeSet[i].position = tempPipePos;
+                    topPipeSet[i].length = newAisleTopPos;
+                    topPipeSet[i].computeBoundingRect();
+
+                    bottomPipeSet[i].position = topPipeSet[i].position;
+                    bottomPipeSet[i].length = 448 - newAisleTopPos - aisleHeight;
+                    bottomPipeSet[i].computeBoundingRect();
+                }
+            }
+            
+            var SlidingDirection = {
+                UP:0 ,
+                DOWN: 1
+            };
+            
+            var slideDir = SlidingDirection.DOWN;
+            var slideCounter = 1;
+            function render() {
+                //Get current date to compute FPS or smooth animation.
+                //var currFrameDate = new Date;
+                //timeElapsed = currFrameDate - lastFrameDate;
+                //lastFrameDate = currFrameDate;
+                
+
+                context.clearRect(0, 0, 800, 600);
+                drawScene();
+                //TODO
+                if (gameState == GameState.NOT_STARTED) {
+                    frameCounter++;
+                    
+                    if( slideDir == SlidingDirection.UP){
+                        slideCounter++;
+                        if(slideCounter == 40){
+                            slideDir = SlidingDirection.DOWN;
+                        }
+                    }
+                    else{
+                        slideCounter--;
+                        if(slideCounter == 0){
+                            slideDir = SlidingDirection.UP;
+                        }
+                    }
+                    
+                    //frameCounter = 0;
+                    /*var startMenuImg = new Image();
+                     startMenuImg.src = './assets/images/basicUI/startMenu.png';
+                     context.drawImage(startMenuImg, 0, 0);*/
+                    var tempHeight;
+                    tempHeight = 120 + slideCounter;
+;
+                    
+                    startTitleImg.src = './assets/images/basicUI/startTitle.png';
+                    context.drawImage(startTitleImg, 50, tempHeight);
+                    
+                    bird.position = 320;
+                    bird.height = 120 + slideCounter + 45;
+                    bird.flyAngle = 0;
+                    
+                    var wingState;
+                    var rem;
+                    rem = slideCounter % 6;
+
+                    if (rem < 2) {
+                        bird.wingState = BirdWingState.NORMAL;
+                    }
+
+                    if (rem < 4 && rem > 1) {
+                        bird.wingState = BirdWingState.DOWN;
+                    }
+
+                    if (rem < 6 && rem > 3) {
+                        bird.wingState = BirdWingState.UP;
+                    }
+                    
+                    bird.drawBird(); 
+                    
+                    context.fillStyle = 'rgb(255, 145, 33)';
+                    context.font = "30px Times New Roman"
+                    context.fillText('Press space key to start!',50, 330);
+
+                } else if (gameState == GameState.BEING_PLAYED) {
+
+                    //frameFlag++;
+                    frameCounter++;
+                    gameLogic();
+                    bird.drawBird();
+
+                    var i;
+                    for ( i = 0; i <= 2; i++) {
+                        topPipeSet[i].drawPipe();
+                        bottomPipeSet[i].drawPipe();
+                    }
+
+                    writeScore();
+
+                } else if (gameState == GameState.OVER) {
+
+                    var i;
+                    for ( i = 0; i <= 2; i++) {
+                        topPipeSet[i].drawPipe();
+                        bottomPipeSet[i].drawPipe();
+                    }
+
+                    if (bird.height > 24) {
+                        bird.height = bird.height - 8;
+                    }
+
+                    bird.flyAngle = Math.PI / 2;
+                    bird.drawBird();
+
+                    var scoreBoardImg = new Image();
+                    var gameoverImg = new Image();
+                    var medalImg = new Image();
+
+                    scoreBoardImg.src = './assets/images/basicUI/scoreBoard.png';
+                    gameoverImg.src = './assets/images/basicUI/gameover.png';
+
+                    if (bestGameScore < currGameScore) {
+                        bestGameScore = currGameScore;
+                    }
+
+                    context.drawImage(gameoverImg, 64, 100);
+                    context.drawImage(scoreBoardImg, 44, 157);
+
+                    if (currGameScore >= 5) {
+                        if (currGameScore < 10) {
+                            medalImg.src = './assets/images/medal/bronze.png';
+                        } else if (currGameScore < 20) {
+                            medalImg.src = './assets/images/medal/silver.png';
+                        } else if (currGameScore < 30) {
+                            medalImg.src = './assets/images/medal/gold.png';
+                        } else {
+                            medalImg.src = './assets/images/medal/whitegold.png';
+                        }
+
+                        context.drawImage(medalImg, 74, 207);
+                    }
+
+                    context.font = "bold 35px Times New Roman"
+                    context.fillText(currGameScore.toString(), 280, 230);
+                    context.fillText(bestGameScore.toString(), 280, 280);
+
+                    context.save();
+                    context.fillStyle = 'rgb(255, 145, 33)';
+                    context.fillText('Press R to replay!', 60, 360);
+                    context.restore();
+                }
+            }
+
+            function playSound(url) {
+                var audio = document.createElement('audio');
+                var source = document.createElement('source');
+                source.type = "audio/mpeg";
+                source.type = "audio/mpeg";
+                source.src = url;
+                source.autoplay = "autoplay";
+                source.controls = "controls";
+                audio.appendChild(source);
+                audio.play();
+
+            }
+
+            function drawScene() {
+                if (environmentState == EnvironmentState.NIGHT) {
+                    bkgImg.src = './assets/images/bkgImg/night.png';
+                } else {
+                    bkgImg.src = './assets/images/bkgImg/daytime.png';
+                }
+                context.drawImage(bkgImg, 0, 0);
+
+                var dx = 0;
+                var dy = 0;
+
+                dx = frameCounter % gameAreaWidth;
+                dy = gameAreaWidth - dx;
+
+                if (dx == 0) {
+                    context.drawImage(groundImg, dx, 0, dy, 64, 0, 448, dy, 64);
+                    frameCounter = 0;
+                } else if (dy == 0) {
+
+                    context.drawImage(groundImg, 0, 0, dx, 64, gameAreaWidth - dx, 448, dx, 64);
+
+                } else {
+
+                    context.drawImage(groundImg, 0, 0, dx, 64, gameAreaWidth - dx, 448, dx, 64);
+
+                    context.drawImage(groundImg, dx, 0, dy, 64, 0, 448, dy, 64);
+                }
+            }
+
+            function writeScore() {
+                context.font = "35px Times New Roman";
+
+                context.fillStyle = 'rgb(255, 255, 255)';
+                context.fillText(currGameScore.toString(), gameAreaWidth / 2, gameAreaHeight / 2 - 120);
+            }
+
+            function gameLogic() {
+                var i;
+                for ( i = 0; i <= 2; i++) {
+                    topPipeSet[i].position--;
+                    adjustPipePosition(i);
+                    bottomPipeSet[i].position = topPipeSet[i].position;
+                }
+                if (bird.strength > 1) {
+
+                    bird.strength--;
+                }
+
+                //var flyAngle;
+                bird.flyAngle = (Math.PI / 4) * (bird.strength - 20) / (-10.0);
+
+                var wingState;
+                var rem;
+                rem = bird.strength % 6;
+
+                if (rem < 2) {
+                    bird.wingState = BirdWingState.NORMAL;
+                }
+
+                if (rem < 4 && rem > 1) {
+                    bird.wingState = BirdWingState.DOWN;
+                }
+
+                if (rem < 6 && rem > 3) {
+                    bird.wingState = BirdWingState.UP;
+                }
+
+                bird.fall();
+                if (checkCollision() == true) {
+                    playSound('./assets/sounds/hit.wav');
+                    playSound('./assets/sounds/die.wav');
+                    gameState = GameState.OVER;
+                };
+            }
+
+            function checkCollision() {
+                var i;
+                var checkedPipeMidPos;
+                var formatBirdHeight;
+                for ( i = 0; i <= 2; i++) {
+                    //countScore;
+                    checkedPipeMidPos = topPipeSet[i].position + 35;
+                    if (bird.position == checkedPipeMidPos) {
+                        currGameScore++;
+                        playSound('./assets/sounds/addScore.wav');
+                        //Play sound -- add score;
+                    }
+
+                    formatBirdHeight = 447 - bird.height;
+
+                    //hit roof
+                    if (formatBirdHeight < 24) {
+
+                        bird.height = 447 - 23;
+                    }
+
+                    //Hit pipe.
+                    if (bird.position > topPipeSet[i].boundingRect.left && bird.position < topPipeSet[i].boundingRect.right) {
+
+                        if (formatBirdHeight < topPipeSet[i].boundingRect.bottom || formatBirdHeight > bottomPipeSet[i].boundingRect.top) {
+                            return true;
+                        }
+                    }
+
+                    //Hit ground.
+                    if (bird.height < 24) {
+
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            function adjustPipePosition(pipeNum) {
+
+                if (topPipeSet[pipeNum].position + topPipeSet[pipeNum].width < 0) {
+                    var newAisleTopPos = generateAisleTopPos();
+
+                    topPipeSet[pipeNum].length = newAisleTopPos;
+                    bottomPipeSet[pipeNum].length = 448 - newAisleTopPos - aisleHeight;
+                    topPipeSet[pipeNum].position = gameAreaWidth + defaultPipeInterval - 3;
+
+                }
+
+                topPipeSet[pipeNum].computeBoundingRect();
+                bottomPipeSet[pipeNum].computeBoundingRect();
+            }
+
+            function generateAisleTopPos() {
+                //Use array to store pipes' postion data.
+                var aisleTopPos;
+                aisleTopPos = GetRandomNum(448 - 250 - 60, 250);
+
+                return aisleTopPos;
+            }
+
+        </script>
+    </head>
+    <body onload="init();">
+        <canvas id = "canvas" width="384" height = "512" style="border:5px solid #0f0f0f"></canvas>
+    </body>
+</html>
